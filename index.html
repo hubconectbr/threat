@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Hacker: Inteligência de Ameaças</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        body {
+            font-family: 'VT323', monospace;
+            background-color: #000; /* Fundo preto para o efeito Matrix */
+            color: #c9d1d9; 
+            overscroll-behavior: none;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Para evitar barras de rolagem devido ao canvas */
+        }
+        #matrixCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0; /* Atrás de todo o conteúdo */
+            display: block;
+        }
+        .game-content-wrapper {
+            position: relative; /* Para que o z-index funcione corretamente nos filhos */
+            z-index: 1; /* Conteúdo do jogo acima do canvas Matrix */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem; /* p-4 */
+            background-color: transparent; /* Conteúdo principal não obscurece o canvas */
+        }
+
+        .hacker-green { color: #39ff14; }
+        .hacker-red { color: #ff073a; }
+        .hacker-blue { color: #00bfff; }
+        .hacker-orange { color: #ff8c00; }
+
+        .btn-hacker {
+            background-color: rgba(31, 41, 55, 0.8); /* Cinza mais escuro com transparência */
+            border: 1px solid #39ff14; 
+            color: #39ff14; 
+            padding: 10px 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 5px #39ff14, 0 0 10px #39ff14 inset;
+        }
+        .btn-hacker:hover {
+            background-color: #39ff14;
+            color: #0d1117;
+            box-shadow: 0 0 10px #39ff14, 0 0 20px #39ff14, 0 0 5px #39ff14 inset;
+        }
+        .btn-hacker:disabled {
+            border-color: #4b5563; 
+            color: #4b5563; 
+            box-shadow: none;
+            cursor: not-allowed;
+            background-color: rgba(75, 85, 99, 0.5);
+        }
+        .option-btn {
+            background-color: rgba(22, 27, 34, 0.8); /* Cor de fundo de componente escuro GitHub com transparência */
+            border: 1px solid #30363d; 
+            color: #c9d1d9;
+            margin-bottom: 10px;
+            text-align: left;
+            transition: all 0.2s ease;
+        }
+        .option-btn:hover:not(:disabled) {
+            border-color: #39ff14;
+            color: #39ff14;
+            background-color: rgba(22, 27, 34, 0.95);
+        }
+        .option-btn.correct {
+            background-color: #39ff14 !important;
+            color: #0d1117 !important;
+            border-color: #39ff14 !important;
+        }
+        .option-btn.incorrect {
+            background-color: #ff073a !important;
+            color: #fff !important;
+            border-color: #ff073a !important;
+        }
+        .input-hacker {
+            background-color: rgba(22, 27, 34, 0.8);
+            border: 1px solid #39ff14;
+            color: #39ff14;
+            padding: 10px;
+            outline: none;
+            box-shadow: 0 0 5px #39ff14;
+        }
+        .input-hacker::placeholder {
+            color: #39ff14a0;
+        }
+        .scanlines { /* Mantido, mas pode ser menos perceptível com o fundo Matrix */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: linear-gradient(
+                to bottom,
+                rgba(13, 17, 23, 0) 0%,
+                rgba(13, 17, 23, 0.2) 50%, /* Levemente ajustado */
+                rgba(13, 17, 23, 0) 100%
+            );
+            background-size: 100% 3px; /* Linhas mais finas */
+            opacity: 0.1; /* Menos opaco */
+            z-index: 2; /* Acima do Matrix, abaixo do conteúdo do jogo */
+            animation: scan 12s linear infinite;
+        }
+        @keyframes scan {
+            0% { background-position: 0 0; }
+            100% { background-position: 0 100px; }
+        }
+        #feedbackMessage {
+            min-height: 50px; 
+            border: 1px dashed #30363d;
+            padding: 10px;
+            margin-top: 15px;
+            background-color: rgba(1, 4, 9, 0.7); /* Fundo leve para legibilidade */
+        }
+        .blinking-cursor {
+            animation: blink 1s step-end infinite;
+        }
+        @keyframes blink {
+            from, to { border-right-color: transparent; }
+            50% { border-right-color: #39ff14; }
+        }
+        .terminal-header {
+            background-color: rgba(48, 54, 61, 0.85); /* Com transparência */
+            padding: 8px 12px;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+        }
+        .terminal-body {
+            background-color: rgba(1, 4, 9, 0.85); /* Ainda mais escuro para sensação de terminal, com transparência */
+            padding: 20px;
+            border-bottom-left-radius: 6px;
+            border-bottom-right-radius: 6px;
+            border: 1px solid #30363d;
+            border-top: none;
+            min-height: 300px; 
+        }
+        .progress-bar-container {
+            width: 100%;
+            background-color: rgba(48, 54, 61, 0.7);
+            border-radius: 4px;
+            overflow: hidden;
+            height: 10px;
+            margin-bottom: 10px;
+        }
+        .progress-bar {
+            height: 100%;
+            background-color: #39ff14;
+            width: 0%;
+            transition: width 0.5s ease-in-out;
+        }
+        .avatar-container {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 2px solid #39ff14;
+            margin-right: 10px;
+            background-color: rgba(22, 27, 34, 0.8);
+        }
+        .avatar-container svg {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="matrixCanvas"></canvas>
+    <div class="scanlines"></div>
+    <div class="game-content-wrapper">
+        <div id="startScreen" class="w-full max-w-md text-center p-6 rounded-lg shadow-xl terminal-body border !border-hacker-green">
+            <h1 class="text-3xl sm:text-4xl hacker-green mb-6">[INTELIGÊNCIA DE AMEAÇAS]</h1>
+            <p class="mb-4 text-lg sm:text-xl hacker-blue">DESAFIO HACKER: INICIAR PROTOCOLO</p>
+            <input type="text" id="pseudonym" placeholder="INSIRA SEU PSEUDÔNIMO" class="input-hacker w-full mb-6 text-center text-lg sm:text-xl rounded-md">
+            <button id="startGameBtn" class="btn-hacker w-full text-lg sm:text-xl rounded-md">CONECTAR</button>
+        </div>
+
+        <div id="gameScreen" class="hidden w-full max-w-2xl"> <div class="terminal-header flex justify-between items-center">
+                <div class="flex space-x-2">
+                    <span class="block w-3 h-3 bg-red-500 rounded-full"></span>
+                    <span class="block w-3 h-3 bg-yellow-500 rounded-full"></span>
+                    <span class="block w-3 h-3 bg-green-500 rounded-full"></span>
+                </div>
+                <div class="text-sm hacker-green">TERMINAL_CTI_V2.3.0_MATRIX_BG</div>
+            </div>
+            <div class="terminal-body rounded-lg shadow-xl">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4">
+                    <div class="flex items-center mb-2 sm:mb-0">
+                        <div id="avatarDisplay" class="avatar-container"></div>
+                        <p class="text-base sm:text-lg">HACKER: <span id="playerName" class="hacker-green"></span></p>
+                    </div>
+                    <p class="text-base sm:text-lg">PONTOS: <span id="score" class="hacker-green">0</span></p>
+                </div>
+                <div class="mb-2">
+                    <p class="text-sm hacker-blue">PROGRESSO DA MISSÃO:</p>
+                    <div class="progress-bar-container">
+                        <div id="progressBar" class="progress-bar"></div>
+                    </div>
+                </div>
+                <div id="questionContainer" class="mb-6">
+                    <p id="questionNumber" class="hacker-blue text-base sm:text-lg mb-2"></p>
+                    <p id="questionText" class="text-lg sm:text-xl mb-4 min-h-[60px] sm:min-h-[80px]"></p>
+                    <div id="optionsContainer" class="grid grid-cols-1 gap-3">
+                        </div>
+                </div>
+                <div id="feedbackMessage" class="text-base sm:text-lg hacker-orange rounded-md">
+                    > Aguardando sua ação... <span class="border-r-2 border-hacker-green blinking-cursor"></span>
+                </div>
+                <button id="nextQuestionBtn" class="btn-hacker w-full mt-6 text-lg sm:text-xl rounded-md hidden">PRÓXIMO ALVO >>></button>
+            </div>
+        </div>
+
+        <div id="endScreen" class="hidden w-full max-w-md text-center p-6 rounded-lg shadow-xl terminal-body border !border-hacker-red">
+            <h2 class="text-2xl sm:text-3xl hacker-red mb-4">[SESSÃO ENCERRADA]</h2>
+            <div class="flex flex-col items-center mb-4">
+                <div id="finalAvatarDisplay" class="avatar-container mb-2"></div>
+                <p class="text-lg sm:text-xl">HACKER: <span id="finalPlayerName" class="hacker-green"></span></p>
+            </div>
+            <p class="text-lg sm:text-xl mb-6">PONTUAÇÃO FINAL: <span id="finalScore" class="hacker-green"></span></p>
+            <p id="finalMessage" class="text-base sm:text-lg mb-6 hacker-blue"></p>
+            <button id="restartGameBtn" class="btn-hacker w-full text-lg sm:text-xl rounded-md">REINICIAR TENTATIVA</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Elementos DOM ---
+        const startScreen = document.getElementById('startScreen');
+        const gameScreen = document.getElementById('gameScreen');
+        const endScreen = document.getElementById('endScreen');
+        const pseudonymInput = document.getElementById('pseudonym');
+        const startGameBtn = document.getElementById('startGameBtn');
+        const playerNameDisplay = document.getElementById('playerName');
+        const scoreDisplay = document.getElementById('score');
+        const questionNumberDisplay = document.getElementById('questionNumber');
+        const questionTextDisplay = document.getElementById('questionText');
+        const optionsContainer = document.getElementById('optionsContainer');
+        const feedbackMessageDisplay = document.getElementById('feedbackMessage');
+        const nextQuestionBtn = document.getElementById('nextQuestionBtn');
+        const progressBar = document.getElementById('progressBar');
+        const finalPlayerNameDisplay = document.getElementById('finalPlayerName');
+        const finalScoreDisplay = document.getElementById('finalScore');
+        const finalMessageDisplay = document.getElementById('finalMessage');
+        const restartGameBtn = document.getElementById('restartGameBtn');
+        const avatarDisplay = document.getElementById('avatarDisplay');
+        const finalAvatarDisplay = document.getElementById('finalAvatarDisplay');
+        const matrixCanvas = document.getElementById('matrixCanvas');
+
+
+        // --- Síntese de Áudio (Tone.js) ---
+        let synth, correctSound, wrongSound, clickSound, typeSound;
+        let audioInitialized = false;
+        let activeTypeTimeouts = {}; 
+
+        function initializeAudio() {
+            if (audioInitialized) return;
+            try {
+                if (typeof Tone !== 'undefined' && Tone.Transport.state !== 'started') {
+                     Tone.start(); 
+                }
+                if (typeof Tone !== 'undefined' && Tone.Transport.state !== "started") { 
+                    Tone.Transport.start();
+                }
+
+                synth = new Tone.Synth({
+                    oscillator: { type: "sine" },
+                    envelope: { attack: 0.01, decay: 0.1, sustain: 0.05, release: 0.2 }
+                }).toDestination();
+                correctSound = () => {
+                    synth.triggerAttackRelease("C5", "8n", Tone.now());
+                    synth.triggerAttackRelease("G5", "8n", Tone.now() + 0.1);
+                };
+                wrongSound = () => {
+                    synth.triggerAttackRelease("C3", "4n", Tone.now());
+                    synth.triggerAttackRelease("F#2", "4n", Tone.now() + 0.1);
+                };
+                clickSound = () => {
+                    const clickSynth = new Tone.NoiseSynth({
+                        noise: { type: 'white' },
+                        envelope: { attack: 0.001, decay: 0.05, sustain: 0 }
+                    }).toDestination();
+                    clickSynth.triggerAttackRelease("16n");
+                };
+                typeSound = new Tone.MembraneSynth({ 
+                    pitchDecay: 0.008,
+                    octaves: 2,
+                    oscillator: { type: "square" },
+                    envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.1 }
+                }).toDestination();
+                audioInitialized = true;
+            } catch (e) {
+                console.error("Erro ao inicializar áudio:", e);
+                correctSound = () => console.log("Som correto");
+                wrongSound = () => console.log("Som errado");
+                clickSound = () => console.log("Som de clique");
+            }
+        }
+        
+        // --- Dados do Jogo ---
+        const avatars = [
+            `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M50 10C27.9086 10 10 27.9086 10 50C10 72.0914 27.9086 90 50 90C72.0914 90 90 72.0914 90 50C90 27.9086 72.0914 10 50 10ZM50 15C69.33 15 85 30.67 85 50C85 69.33 69.33 85 50 85C30.67 85 15 69.33 15 50C15 30.67 30.67 15 50 15Z" fill="#39ff14"/><path d="M35 40C37.7614 40 40 37.7614 40 35C40 32.2386 37.7614 30 35 30C32.2386 30 30 32.2386 30 35C30 37.7614 32.2386 40 35 40Z" fill="#39ff14"/><path d="M65 40C67.7614 40 70 37.7614 70 35C70 32.2386 67.7614 30 65 30C62.2386 30 60 32.2386 60 35C60 37.7614 62.2386 40 65 40Z" fill="#39ff14"/><path d="M30 60C30 55 40 50 50 50C60 50 70 55 70 60H30Z" fill="#39ff14"/><path d="M50 65C45 65 40 70 40 70H60C60 70 55 65 50 65Z" fill="#0d1117" stroke="#39ff14" stroke-width="2"/></svg>`,
+            `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M50 10C38.9543 10 30 18.9543 30 30V40C30 45.5228 34.4772 50 40 50H60C65.5228 50 70 45.5228 70 40V30C70 18.9543 61.0457 10 50 10Z" fill="#39ff14"/><rect x="35" y="45" width="30" height="45" rx="5" fill="#39ff14"/><path d="M40 35C41.1046 35 42 34.1046 42 33C42 31.8954 41.1046 31 40 31C38.8954 31 38 31.8954 38 33C38 34.1046 38.8954 35 40 35Z" fill="#0d1117"/><path d="M60 35C61.1046 35 62 34.1046 62 33C62 31.8954 61.1046 31 60 31C58.8954 31 58 31.8954 58 33C58 34.1046 58.8954 35 60 35Z" fill="#0d1117"/></svg>`,
+            `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="20" y="20" width="60" height="60" fill="#39ff14"/><rect x="30" y="30" width="10" height="10" fill="#0d1117"/><rect x="60" y="30" width="10" height="10" fill="#0d1117"/><rect x="35" y="55" width="30" height="5" fill="#0d1117"/><rect x="25" y="25" width="5" height="50" fill="#ff073a"/><rect x="70" y="25" width="5" height="50" fill="#00bfff"/><rect x="47" y="20" width="6" height="60" fill="#161b22" opacity="0.5"/></svg>`
+        ];
+        let chosenAvatarSVG = '';
+
+        const feedbackCorrectPool = [
+            "Excelente! Você está a mover-se pelas sombras como um profissional.",
+            "Correto! O seu conhecimento em CTI é uma arma poderosa neste jogo.",
+            "Perfeito! Com essa precisão, nenhum sistema está seguro.",
+            "Afirmativo! Você pensa como um verdadeiro arquiteto de inteligência."
+        ];
+        const feedbackIncorrectPolicePool = [
+            "Alerta! Essa resposta errada acendeu um alerta na rede da polícia. Cuidado!",
+            "Perigo! Os federais estão a aproximar-se com essa sua falha.",
+            "Detetado! O seu erro foi como deixar uma porta dos fundos aberta para os 'azuis'.",
+            "Apanhado! Com essa informação, você facilitou o trabalho da lei."
+        ];
+        const feedbackIncorrectCommunityPool = [
+            "Falha crítica! A comunidade não vai gostar de saber desse seu deslize.",
+            "Que mancada! Informação incorreta assim compromete a todos nós.",
+            "Negativo! Isso enfraquece a nossa posição. Precisamos de mais precisão.",
+            "Deceção! Um erro desses pode quebrar a confiança do seu grupo."
+        ];
+
+        const getRandomFeedback = (pool) => pool[Math.floor(Math.random() * pool.length)];
+
+        const gameQuestions = [
+            { question: "Qual a definição de Cyber Threat Intelligence apresentada, atribuída a Carnegie Mellon SEI, 2019?", options: ["Apenas a coleta e análise de indicadores de comprometimento (IOCs).", "O monitoramento contínuo de redes e sistemas em busca de atividades maliciosas.", "A aquisição, processamento, análise e disseminação de informações que identificam, rastreiam e preveem ameaças, riscos e oportunidades no domínio cibernético para oferecer cursos de ação que aprimorem a tomada de decisões.", "O estudo do comportamento de usuários para detectar anomalias de segurança."], answer: 2 },
+            { question: "A ementa da disciplina menciona a exploração da identificação e análise de quais elementos para proteger marcas e organizações?", options: ["Vulnerabilidades de software.", "Conformidade regulatória.", "Campanhas maliciosas.", "Configurações de segurança."], answer: 2 },
+            { question: "De acordo com os objetivos da Aula 01, quais são alguns dos tipos de inteligência que serão abordados?", options: ["Financeira, Legal e Operacional.", "Estratégica, Tática e Operacional.", "De Mercado, Competitiva e Técnica.", "Humana, de Sinais e de Fontes Abertas."], answer: 1 },
+            { question: "A Aula 01 também aborda a diferença entre:", options: ["Risco, Vulnerabilidade e Ameaça.", "Firewall, IDS e IPS.", "Malware, Vírus e Worms.", "Dados, Informação e Inteligência."], answer: 0 },
+            { question: "Qual metodologia ou framework é explicitamente mencionado nos objetivos da Aula 01, ao lado do Diamond Model e Cyber Kill Chain?", options: ["NIST Cybersecurity Framework.", "ISO 27001.", "MITRE ATT&CK.", "FAIR (Factor Analysis of Information Risk)."], answer: 2 },
+            { question: "De acordo com os objetivos da Aula 02, quais são algumas fontes de dados de inteligência de ameaças listadas?", options: ["Logs de sistema, Auditorias e Backups.", "Firewalls, Antivírus e SIEM.", "OSINT, HUMINT, SIGINT, dados de código aberto e feeds de inteligência comercial.", "Entrevistas com funcionários e Clientes."], answer: 2 },
+            { question: "A Aula 02 lista ferramentas de coleta de dados, incluindo web scraping e APIs. Qual outra ferramenta é mencionada?", options: ["Ferramentas de varredura de portas.", "Ferramentas de análise de malware.", "Ferramentas de testes de intrusão.", "Ferramentas de criptografia."], answer: 0 },
+            { question: "O tratamento de dados, conforme os objetivos da Aula 02, envolve processos como limpeza e normalização. Qual outro processo é citado?", options: ["Criptografia.", "Backup.", "Enriquecimento.", "Compactação."], answer: 2 },
+            { question: "A Aula 03 é dedicada à Análise de Dados de Inteligência. Um dos objetivos principais desta aula é:", options: ["Coletar mais dados.", "Compartilhar dados brutos.", "Correlacionar dados: identificação de relações entre diferentes eventos e informações.", "Descartar dados irrelevantes."], answer: 2 },
+            { question: "Quais são alguns tipos de técnicas de análise de dados de inteligência mencionados nos objetivos da Aula 03?", options: ["Análise estatística, Análise de sentimentos, Análise preditiva.", "Análise de padrões, Análise de malware, Análise de vulnerabilidades, Análise de comportamento.", "Análise forense, Análise de rede, Análise de memória.", "Análise de custo-benefício, Análise SWOT, Análise de risco."], answer: 1 },
+            { question: "Os objetivos da Aula 04 incluem a apresentação de padrões e frameworks para compartilhamento de inteligência de ameaças. Quais são alguns exemplos citados?", options: ["TCP/IP, HTTP, DNS.", "MISP, STIX, TAXII.", "SHA-256, AES, RSA.", "ISO 27001, NIST, GDPR."], answer: 1 },
+            { question: "Ao discutir as boas práticas para o compartilhamento de inteligência nos objetivos da Aula 04, além de confiança e credibilidade, anonimização e privacidade, qual outro aspecto é destacado?", options: ["Velocidade do compartilhamento.", "Volume de dados compartilhados.", "Formato do arquivo.", "Contexto e relevância."], answer: 3 },
+            { question: "A Aula 05 foca na Inteligência de Ameaças na Prática. Quais são algumas das aplicações da inteligência de ameaças mencionadas?", options: ["Desenvolvimento de software seguro.", "Detecção de intrusões, resposta a incidentes, gerenciamento de vulnerabilidades.", "Auditoria de sistemas.", "Treinamento de usuários."], answer: 1 },
+            { question: "A Aula 05 discute a integração da Inteligência de Ameaças com outras áreas de segurança. Quais equipes são citadas como áreas de integração?", options: ["Equipes de marketing, vendas e finanças.", "Equipes de RH e jurídico.", "SOC, equipes de resposta a incidentes, equipes de segurança de rede.", "Equipes de desenvolvimento e operações (DevOps)."], answer: 2 },
+            { question: "Nos Tópicos Avançados e Desafios da Inteligência de Ameaças (Aula 06), qual tecnologia é mencionada para a utilização de inteligência de ameaças preditiva e para antecipar ataques?", options: ["Virtualização e contêineres.", "Blockchain.", "Machine Learning e IA.", "Computação quântica."], answer: 2 }
+        ];
+
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let playerName = "Anônimo";
+        let shuffledQuestions = [];
+
+        // --- Lógica do Efeito Matrix ---
+        let matrixCtx;
+        let matrixCols;
+        let matrixDrops;
+        const matrixFontSize = 16; // Tamanho da fonte para os caracteres "pixelados"
+        const matrixChars = "01"; // Caracteres simples para um efeito mais "pixel"
+        // Alternativamente, para um look mais clássico:
+        // const matrixChars = "アァカサタナハマヤャラワガザダバパイィキシチニヒミリヰギジヂビピウゥクスツヌフムユュルグズブヅプエェケセテネヘメレヱゲゼデベペオォコソトノホモヨョロヲゴゾドボポヴッン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let matrixInterval;
+
+        function setupMatrix() {
+            if (!matrixCanvas) return;
+            matrixCtx = matrixCanvas.getContext('2d');
+            matrixCanvas.width = window.innerWidth;
+            matrixCanvas.height = window.innerHeight;
+
+            matrixCols = Math.floor(matrixCanvas.width / matrixFontSize);
+            matrixDrops = [];
+            for (let x = 0; x < matrixCols; x++) {
+                matrixDrops[x] = 1 + Math.random() * matrixCanvas.height; // Começa em posições aleatórias
+            }
+        }
+
+        function drawMatrix() {
+            if (!matrixCtx) return;
+
+            matrixCtx.fillStyle = "rgba(0, 0, 0, 0.05)"; // Fundo semi-transparente para efeito de rastro
+            matrixCtx.fillRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+
+            matrixCtx.fillStyle = "#0F0"; // Cor verde Matrix
+            matrixCtx.font = matrixFontSize + "px VT323, monospace"; // Usar a mesma fonte do jogo
+
+            for (let i = 0; i < matrixDrops.length; i++) {
+                const text = matrixChars[Math.floor(Math.random() * matrixChars.length)];
+                matrixCtx.fillText(text, i * matrixFontSize, matrixDrops[i] * matrixFontSize);
+
+                if (matrixDrops[i] * matrixFontSize > matrixCanvas.height && Math.random() > 0.975) {
+                    matrixDrops[i] = 0; // Reseta para o topo aleatoriamente
+                }
+                matrixDrops[i]++;
+            }
+        }
+
+        function startMatrixAnimation() {
+            setupMatrix();
+            if (matrixInterval) clearInterval(matrixInterval);
+            matrixInterval = setInterval(drawMatrix, 45); // Ajuste a velocidade aqui (ms)
+        }
+        
+        window.addEventListener('resize', () => {
+            if (matrixCanvas && matrixCtx) { // Garante que o canvas e o contexto existam
+                setupMatrix(); // Reconfigura as gotas e colunas no redimensionamento
+            }
+        });
+
+
+        // --- Lógica do Jogo ---
+        function typeMessage(element, message, speed = 50) {
+            if (element.id && activeTypeTimeouts[element.id]) {
+                clearTimeout(activeTypeTimeouts[element.id]); 
+            }
+
+            element.innerHTML = "> "; 
+            let i = 0;
+            const cursorSpan = document.createElement('span');
+            cursorSpan.className = 'border-r-2 border-hacker-green blinking-cursor';
+            element.appendChild(cursorSpan); 
+
+            function type() {
+                if (i < message.length) {
+                    if (audioInitialized && typeSound && i % 4 === 0) { 
+                         try {
+                            typeSound.triggerAttackRelease("C1", "64n", Tone.now() + 0.02); 
+                         } catch (e) {
+                            console.warn("Pequeno erro no som de digitação:", e.message);
+                         }
+                    }
+                    if (element.contains(cursorSpan)) { 
+                        element.insertBefore(document.createTextNode(message.charAt(i)), cursorSpan);
+                    } else { 
+                        element.appendChild(document.createTextNode(message.charAt(i)));
+                        element.appendChild(cursorSpan); 
+                    }
+                    i++;
+                    const timeoutId = setTimeout(type, speed);
+                    if (element.id) {
+                        activeTypeTimeouts[element.id] = timeoutId;
+                    }
+                } else {
+                    if (element.contains(cursorSpan)) {
+                        element.removeChild(cursorSpan);
+                    }
+                    element.appendChild(cursorSpan);
+                    if (element.id) { 
+                        delete activeTypeTimeouts[element.id];
+                    }
+                }
+            }
+            type();
+        }
+
+        function startGame() {
+            initializeAudio(); 
+            if (clickSound) clickSound();
+
+            const name = pseudonymInput.value.trim();
+            playerName = name || "Anônimo"; 
+            playerNameDisplay.textContent = playerName;
+            finalPlayerNameDisplay.textContent = playerName;
+
+            chosenAvatarSVG = avatars[Math.floor(Math.random() * avatars.length)];
+            avatarDisplay.innerHTML = chosenAvatarSVG;
+            finalAvatarDisplay.innerHTML = chosenAvatarSVG;
+
+            score = 0;
+            currentQuestionIndex = 0;
+            scoreDisplay.textContent = score;
+            
+            shuffledQuestions = [...gameQuestions].sort(() => Math.random() - 0.5);
+
+            startScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+            endScreen.classList.add('hidden');
+            nextQuestionBtn.classList.add('hidden');
+            
+            updateProgressBar();
+            loadQuestion();
+        }
+
+        function updateProgressBar() {
+            const progress = ((currentQuestionIndex) / shuffledQuestions.length) * 100;
+            progressBar.style.width = `${progress}%`;
+        }
+
+        function loadQuestion() {
+            if (currentQuestionIndex < shuffledQuestions.length) {
+                const currentQuestion = shuffledQuestions[currentQuestionIndex];
+                questionNumberDisplay.textContent = `ALVO ${currentQuestionIndex + 1} DE ${shuffledQuestions.length}`;
+                typeMessage(questionTextDisplay, currentQuestion.question, 20); 
+                
+                optionsContainer.innerHTML = ''; 
+                currentQuestion.options.forEach((option, index) => {
+                    const button = document.createElement('button');
+                    button.classList.add('btn-hacker', 'option-btn', 'w-full', 'p-3', 'text-base', 'sm:text-lg', 'rounded-md');
+                    button.textContent = `${String.fromCharCode(65 + index)}) ${option}`; 
+                    button.dataset.index = index;
+                    button.addEventListener('click', selectAnswer);
+                    optionsContainer.appendChild(button);
+                });
+                typeMessage(feedbackMessageDisplay, "Analisando alvos... Faça sua escolha.");
+                feedbackMessageDisplay.className = 'text-base sm:text-lg hacker-orange rounded-md'; 
+                nextQuestionBtn.classList.add('hidden');
+                enableOptions();
+            } else {
+                showEndScreen();
+            }
+            updateProgressBar(); 
+        }
+
+        function selectAnswer(event) {
+            if (clickSound) clickSound();
+            const selectedButton = event.target.closest('.option-btn'); 
+            if (!selectedButton) return;
+
+            const selectedAnswerIndex = parseInt(selectedButton.dataset.index);
+            const currentQuestion = shuffledQuestions[currentQuestionIndex];
+
+            disableOptions();
+
+            if (selectedAnswerIndex === currentQuestion.answer) {
+                score += 10;
+                scoreDisplay.textContent = score;
+                selectedButton.classList.add('correct');
+                typeMessage(feedbackMessageDisplay, `[+] ACESSO AUTORIZADO: ${getRandomFeedback(feedbackCorrectPool)}`);
+                feedbackMessageDisplay.classList.remove('hacker-red', 'hacker-orange');
+                feedbackMessageDisplay.classList.add('hacker-green');
+                if (correctSound) correctSound();
+            } else {
+                selectedButton.classList.add('incorrect');
+                const correctButton = optionsContainer.querySelector(`[data-index='${currentQuestion.answer}']`);
+                if (correctButton) correctButton.classList.add('correct'); 
+
+                let incorrectMsg;
+                if (Math.random() < 0.5) { 
+                    incorrectMsg = getRandomFeedback(feedbackIncorrectPolicePool);
+                } else {
+                    incorrectMsg = getRandomFeedback(feedbackIncorrectCommunityPool);
+                }
+                typeMessage(feedbackMessageDisplay, `[-] ALERTA DE INTRUSÃO: ${incorrectMsg}`);
+                feedbackMessageDisplay.classList.remove('hacker-green', 'hacker-orange');
+                feedbackMessageDisplay.classList.add('hacker-red');
+                if (wrongSound) wrongSound();
+            }
+
+            nextQuestionBtn.classList.remove('hidden');
+        }
+
+        function disableOptions() {
+            optionsContainer.querySelectorAll('.option-btn').forEach(btn => {
+                btn.disabled = true;
+            });
+        }
+        function enableOptions() {
+             optionsContainer.querySelectorAll('.option-btn').forEach(btn => {
+                btn.disabled = false;
+                btn.classList.remove('correct', 'incorrect'); 
+            });
+        }
+
+        function nextQuestion() {
+            if (clickSound) clickSound();
+            currentQuestionIndex++;
+            loadQuestion();
+        }
+
+        function showEndScreen() {
+            progressBar.style.width = `100%`; 
+            gameScreen.classList.add('hidden');
+            endScreen.classList.remove('hidden');
+            finalScoreDisplay.textContent = score;
+
+            let message = "";
+            const percentage = (score / (shuffledQuestions.length * 10)) * 100;
+            if (percentage >= 80) {
+                message = "Dominação total! Você é um L33T H4X0R em Inteligência de Ameaças!";
+                finalMessageDisplay.className = 'text-base sm:text-lg mb-6 hacker-green';
+            } else if (percentage >= 50) {
+                message = "Boa performance, agente! Você navegou bem pelo sistema, mas alguns rastros ficaram.";
+                finalMessageDisplay.className = 'text-base sm:text-lg mb-6 hacker-blue';
+            } else if (percentage >= 20) {
+                message = "Você mostrou potencial, mas o sistema é complexo. Mais estudo e você chega lá!";
+                finalMessageDisplay.className = 'text-base sm:text-lg mb-6 hacker-orange';
+            }
+             else {
+                message = "Falha na missão. Parece que os sistemas de defesa foram mais espertos desta vez. Estude mais e tente novamente.";
+                 finalMessageDisplay.className = 'text-base sm:text-lg mb-6 hacker-red';
+            }
+            typeMessage(finalMessageDisplay, message);
+        }
+
+        function restartGame() {
+            if (clickSound) clickSound();
+            feedbackMessageDisplay.classList.remove('hacker-green', 'hacker-red');
+            feedbackMessageDisplay.classList.add('hacker-orange');
+            progressBar.style.width = '0%';
+
+            startScreen.classList.remove('hidden');
+            endScreen.classList.add('hidden');
+            pseudonymInput.value = ""; 
+        }
+
+        // --- Event Listeners ---
+        startGameBtn.addEventListener('click', startGame);
+        nextQuestionBtn.addEventListener('click', nextQuestion);
+        restartGameBtn.addEventListener('click', restartGame);
+        
+        pseudonymInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                startGameBtn.click();
+            }
+        });
+
+        document.body.addEventListener('click', initializeAudio, { once: true });
+        document.body.addEventListener('touchstart', initializeAudio, { once: true });
+        
+        // Iniciar animação Matrix quando o DOM estiver pronto
+        document.addEventListener('DOMContentLoaded', () => {
+            startMatrixAnimation();
+            typeMessage(feedbackMessageDisplay, "Sistema pronto para iniciar sequência...");
+        });
+
+
+    </script>
+</body>
+</html>
